@@ -88,11 +88,10 @@ type WarriorPurchased @entity(immutable: true) {
 
 type PlatformStats @entity (immutable: false) {
   id: ID!
-  totalStaked: BigInt! # Cantidad total de tokens en stake
-  totalStakers: BigInt! # Número total de stakers únicos
-  totalGames: BigInt! # Número total de partidas jugadas
-  totalUsers: BigInt! # Número total de usuarios registrados
-  updatedAt: BigInt! # Timestamp de la última actualización
+  totalStaked: BigInt! # Total of staked tokens
+  totalGames: BigInt! # Total of games played
+  totalUsers: BigInt! # Total of users registered
+  updatedAt: BigInt! # Timestamp of the last update
 }
 
 type MineGame @entity (immutable: false) {

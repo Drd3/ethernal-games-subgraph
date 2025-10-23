@@ -1,7 +1,8 @@
 import { GameCreated, CellResolved, CommitCell } from "../generated/MinesGame/MinesGame";
 import { CashedOut } from "../generated/MinesGame/MinesGame";
-import { MineGame, PlatformStats } from "../generated/schema";
-import { BigInt, Bytes, BigDecimal, Address } from "@graphprotocol/graph-ts";
+import { MineGame } from "../generated/schema";
+import { BigInt, Bytes, BigDecimal } from "@graphprotocol/graph-ts";
+import { updateTotalGames, updateTotalStaked, updateTotalUsers } from "./game-stats";
 
 // get-or-create helper for MineGame
 function getOrCreateMineGame(id: Bytes): MineGame {
@@ -23,57 +24,6 @@ function getOrCreateMineGame(id: Bytes): MineGame {
   return entity as MineGame;
 }
 
-// get-or-create helper for TotalStakes
-function getOrCreateTotalStakes(): PlatformStats {
-  let id = '1';
-  let totalStakes = PlatformStats.load(id);
-  if (totalStakes == null) {
-    totalStakes = new PlatformStats(id);
-    totalStakes.totalStaked = BigInt.zero();
-    totalStakes.totalStakers = BigInt.zero();
-    totalStakes.totalGames = BigInt.zero();
-    totalStakes.totalUsers = BigInt.zero();
-    totalStakes.updatedAt = BigInt.zero();
-  }
-  return totalStakes as PlatformStats;
-}
-
-// Helper to update total stakers count
-function updateTotalStakers(delta: i32, timestamp: BigInt): void {
-  let totalStakes = getOrCreateTotalStakes();
-  totalStakes.totalStakers = totalStakes.totalStakers.plus(BigInt.fromI32(delta));
-  totalStakes.updatedAt = timestamp;
-  totalStakes.save();
-}
-
-// Helper to update total staked amount
-function updateTotalStaked(amount: BigInt, timestamp: BigInt, isAdd: boolean = true): void {
-  let totalStakes = getOrCreateTotalStakes();
-  if (isAdd) {
-    totalStakes.totalStaked = totalStakes.totalStaked.plus(amount);
-  } else {
-    totalStakes.totalStaked = totalStakes.totalStaked.minus(amount);
-  }
-  totalStakes.updatedAt = timestamp;
-  totalStakes.save();
-}
-
-// Helper to update total games count
-function updateTotalGames(delta: i32, timestamp: BigInt): void {
-  let totalStakes = getOrCreateTotalStakes();
-  totalStakes.totalGames = totalStakes.totalGames.plus(BigInt.fromI32(delta));
-  totalStakes.updatedAt = timestamp;
-  totalStakes.save();
-}
-
-// Helper to update total users count
-function updateTotalUsers(delta: i32, timestamp: BigInt): void {
-  let totalStakes = getOrCreateTotalStakes();
-  totalStakes.totalUsers = totalStakes.totalUsers.plus(BigInt.fromI32(delta));
-  totalStakes.updatedAt = timestamp;
-  totalStakes.save();
-}
-
 export function handleGameCreated(event: GameCreated): void {
   let id = event.params.player;
   let entity = getOrCreateMineGame(id);
@@ -85,15 +35,6 @@ export function handleGameCreated(event: GameCreated): void {
   
   // Update total staked and stakers
   updateTotalStaked(stakeAmount, event.block.timestamp);
-  
-  // Check if this is a new user
-  let previousGame = MineGame.load(id);
-  const isNewUser = !previousGame || previousGame.stake.equals(BigInt.zero());
-  
-  if (isNewUser) {
-    updateTotalStakers(1, event.block.timestamp);
-    updateTotalUsers(1, event.block.timestamp);
-  }
   
   // Increment total games counter for each new game
   updateTotalGames(1, event.block.timestamp);
@@ -134,17 +75,30 @@ export function handleCommitCell(event: CommitCell): void {
   entity.save();
 }
 
+const manageGameStatus = (isMine: boolean, cells: i32, remainingMines: i32, revealedCells: i32[]): boolean => {
+  // active states only manages whether the game is over or not 
+  if(isMine) {
+    return false; // So it's a loss, game isnt active
+  }else {
+    let totalPosibleCells = cells - remainingMines;
+    if(totalPosibleCells == revealedCells.length) {
+      return false; // So it's a win, game isnt active because all possible cells are revealed
+    }
+    return true; // the game continue as active, because there are still mines to reveal
+  }
+}
+
 export function handleCellResolved(event: CellResolved): void {
   // TODO: Implement once ID strategy is finalized (likely player + gameId)
   let id = event.params.player;
   let entity = getOrCreateMineGame(id);
+  let revealed = entity.revealedCells;
 
   entity.isMine = event.params.isMine;
-  entity.active = !event.params.isMine;
+  entity.active = manageGameStatus(event.params.isMine, entity.remainingCells, entity.remainingMines, revealed);
   entity.vrfPending = false;
   entity.cumMul = event.params.cumMulWad.toBigDecimal().div(BigDecimal.fromString("1000000000000000000"));
   entity.vrfRequestId = BigInt.zero();
-  let revealed = entity.revealedCells;
   revealed.push(event.params.cellIndex.toI32());
   entity.revealedCells = revealed;
   entity.pendingCell = -1;
@@ -161,13 +115,6 @@ export function handleCashedOut(event: CashedOut): void {
   entity.active = false;
   
   // Update total staked when user cashes out
-  if (entity.stake.gt(BigInt.zero())) {
-    updateTotalStaked(entity.stake, event.block.timestamp, false);
-    // If they cashed out their full stake, decrement stakers count
-    if (entity.stake.plus(cashoutAmount).equals(BigInt.zero())) {
-      updateTotalStakers(-1, event.block.timestamp);
-    }
-  }
   
   entity.cashedOut = true;
   // Reset gameplay-related state
