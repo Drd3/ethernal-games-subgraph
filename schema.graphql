@@ -86,6 +86,15 @@ type WarriorPurchased @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
+type PlatformStats @entity (immutable: false) {
+  id: ID!
+  totalStaked: BigInt! # Cantidad total de tokens en stake
+  totalStakers: BigInt! # Número total de stakers únicos
+  totalGames: BigInt! # Número total de partidas jugadas
+  totalUsers: BigInt! # Número total de usuarios registrados
+  updatedAt: BigInt! # Timestamp de la última actualización
+}
+
 type MineGame @entity (immutable: false) {
   id: Bytes!
   gameId: BigInt! # uint256

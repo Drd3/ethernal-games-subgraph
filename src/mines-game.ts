@@ -1,7 +1,7 @@
 import { GameCreated, CellResolved, CommitCell } from "../generated/MinesGame/MinesGame";
 import { CashedOut } from "../generated/MinesGame/MinesGame";
-import { MineGame } from "../generated/schema";
-import { BigInt, Bytes, BigDecimal } from "@graphprotocol/graph-ts";
+import { MineGame, PlatformStats } from "../generated/schema";
+import { BigInt, Bytes, BigDecimal, Address } from "@graphprotocol/graph-ts";
 
 // get-or-create helper for MineGame
 function getOrCreateMineGame(id: Bytes): MineGame {
@@ -23,13 +23,81 @@ function getOrCreateMineGame(id: Bytes): MineGame {
   return entity as MineGame;
 }
 
+// get-or-create helper for TotalStakes
+function getOrCreateTotalStakes(): PlatformStats {
+  let id = '1';
+  let totalStakes = PlatformStats.load(id);
+  if (totalStakes == null) {
+    totalStakes = new PlatformStats(id);
+    totalStakes.totalStaked = BigInt.zero();
+    totalStakes.totalStakers = BigInt.zero();
+    totalStakes.totalGames = BigInt.zero();
+    totalStakes.totalUsers = BigInt.zero();
+    totalStakes.updatedAt = BigInt.zero();
+  }
+  return totalStakes as PlatformStats;
+}
+
+// Helper to update total stakers count
+function updateTotalStakers(delta: i32, timestamp: BigInt): void {
+  let totalStakes = getOrCreateTotalStakes();
+  totalStakes.totalStakers = totalStakes.totalStakers.plus(BigInt.fromI32(delta));
+  totalStakes.updatedAt = timestamp;
+  totalStakes.save();
+}
+
+// Helper to update total staked amount
+function updateTotalStaked(amount: BigInt, timestamp: BigInt, isAdd: boolean = true): void {
+  let totalStakes = getOrCreateTotalStakes();
+  if (isAdd) {
+    totalStakes.totalStaked = totalStakes.totalStaked.plus(amount);
+  } else {
+    totalStakes.totalStaked = totalStakes.totalStaked.minus(amount);
+  }
+  totalStakes.updatedAt = timestamp;
+  totalStakes.save();
+}
+
+// Helper to update total games count
+function updateTotalGames(delta: i32, timestamp: BigInt): void {
+  let totalStakes = getOrCreateTotalStakes();
+  totalStakes.totalGames = totalStakes.totalGames.plus(BigInt.fromI32(delta));
+  totalStakes.updatedAt = timestamp;
+  totalStakes.save();
+}
+
+// Helper to update total users count
+function updateTotalUsers(delta: i32, timestamp: BigInt): void {
+  let totalStakes = getOrCreateTotalStakes();
+  totalStakes.totalUsers = totalStakes.totalUsers.plus(BigInt.fromI32(delta));
+  totalStakes.updatedAt = timestamp;
+  totalStakes.save();
+}
+
 export function handleGameCreated(event: GameCreated): void {
   let id = event.params.player;
   let entity = getOrCreateMineGame(id);
 
   entity.player = event.params.player;
   entity.gameId = event.params.gameId;
-  entity.stake = event.params.stake.div(BigInt.fromI32(10).pow(18));
+  const stakeAmount = event.params.stake.div(BigInt.fromI32(10).pow(18));
+  entity.stake = stakeAmount;
+  
+  // Update total staked and stakers
+  updateTotalStaked(stakeAmount, event.block.timestamp);
+  
+  // Check if this is a new user
+  let previousGame = MineGame.load(id);
+  const isNewUser = !previousGame || previousGame.stake.equals(BigInt.zero());
+  
+  if (isNewUser) {
+    updateTotalStakers(1, event.block.timestamp);
+    updateTotalUsers(1, event.block.timestamp);
+  }
+  
+  // Increment total games counter for each new game
+  updateTotalGames(1, event.block.timestamp);
+  
   let cells = event.params.totalCells.toI32();
   let tableDimensions = 0;
 
@@ -88,9 +156,20 @@ export function handleCashedOut(event: CashedOut): void {
   let id = event.params.player;
   let entity = getOrCreateMineGame(id);
 
-  entity.cashedOut = true;
-  entity.cashoutAmount = event.params.amount.toBigDecimal().div(BigDecimal.fromString("1000000000000000000"));
+  const cashoutAmount = event.params.amount;
+  entity.cashoutAmount = cashoutAmount.toBigDecimal().div(BigDecimal.fromString("1000000000000000000"));
   entity.active = false;
+  
+  // Update total staked when user cashes out
+  if (entity.stake.gt(BigInt.zero())) {
+    updateTotalStaked(entity.stake, event.block.timestamp, false);
+    // If they cashed out their full stake, decrement stakers count
+    if (entity.stake.plus(cashoutAmount).equals(BigInt.zero())) {
+      updateTotalStakers(-1, event.block.timestamp);
+    }
+  }
+  
+  entity.cashedOut = true;
   // Reset gameplay-related state
   entity.vrfPending = false;
   entity.vrfRequestId = BigInt.zero();
