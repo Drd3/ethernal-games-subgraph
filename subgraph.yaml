@@ -6,10 +6,10 @@ schema:
 dataSources:
   - kind: ethereum
     name: InfiniteDungeon
-    network: mainnet
+    network: base-sepolia
     source:
-      address: "0xe8addd62fed354203d079926a8e563bc1a7fe81e"
       abi: InfiniteDungeon
+      address: "0xe8addd62fed354203d079926a8e563bc1a7fe81e"
       startBlock: 0
     mapping:
       kind: ethereum/events
@@ -48,14 +48,13 @@ dataSources:
         - event: WarriorPurchased(indexed uint256,indexed address,uint8,uint8)
           handler: handleWarriorPurchased
       file: ./src/infinite-dungeon.ts
-
   - kind: ethereum
     name: MinesGame
-    network: mainnet
+    network: base-sepolia
     source:
-      address: "0x6732128f9cc0c4344b2d4dc6285bcd516b7e59e6"
       abi: MinesGame
-      startBlock: 355
+      address: "0x64cec5987a6986aa415a01b3396c8e77b427b2d6"
+      startBlock: 33297709
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -68,7 +67,8 @@ dataSources:
       eventHandlers:
         - event: GameCreated(indexed address,indexed uint64,uint256,uint256,uint256)
           handler: handleGameCreated
-        - event: CellResolved(indexed address,indexed uint64,uint256,bool,uint256,uint256,uint256)
+        - event: CellResolved(indexed address,indexed
+            uint64,uint256,bool,uint256,uint256,uint256)
           handler: handleCellResolved
         - event: CommitCell(indexed address,indexed uint64,uint256,uint256)
           handler: handleCommitCell
